@@ -11,6 +11,35 @@ Point centre;
 Point user;
 Point station;
 
+void recogniseStickersByThreshold(cv::Mat image)  { 
+    cv::Mat image_hsv; 
+    std::vector< std::vector<cv::Point> > contours;
+    cv::cvtColor(image, image_hsv, cv::COLOR_BGR2HSV );  // Преобразуем в hsv
+    cv::Mat tmp_img1(image.size(),CV_8U);
+    cv::Mat tmp_img2(image.size(),CV_8U); 
+    cv::Mat tmp_img(image.size(),CV_8U); 
+    // Выделение подходящих по цвету областей. Цвет задается константой :) 
+    cv::inRange(image_hsv, cv::Scalar(0,140,120), cv::Scalar(10, 240, 230), tmp_img1); 
+    cv::inRange(image_hsv, cv::Scalar(170,140,120), cv::Scalar(180, 240, 230), tmp_img2);
+    bitwise_or(tmp_img1, tmp_img2, tmp_img);
+    // "Замазать" огрехи в при выделении по цвету 
+    cv::dilate(tmp_img,tmp_img,cv::Mat(),cv::Point(-1,-1),10);   
+    cv::erode(tmp_img,tmp_img,cv::Mat(),cv::Point(-1,-1),10); 
+    //Выделение непрерывных областей 
+    cv::findContours(tmp_img,contours, RETR_EXTERNAL, CHAIN_APPROX_NONE); 
+    for (uint i = 0; i<contours.size(); i++) {
+        cv::Mat sticker; 
+        //Для каждой области определяем ограничивающий прямоугольник 
+        cv::RotatedRect rect= minAreaRect(contours[i]); 
+        cv::Point2f pts[4];
+        rect.points(pts);
+        for (int j = 0; j < 4; j++){
+            cv::line(image, pts[j], pts[(j+1)%4], cv::Scalar(0,255,0), 2);
+        } 
+    } 
+} 
+
+
 void draw(Mat& frame){
     line(frame, pered, zad, Scalar(0,255,0), 3);
     line(frame, centre, station, Scalar(0, 255, 0), 3);
@@ -80,6 +109,7 @@ int main() {
         calculate_centre();
         calculate();
         draw(frame);
+        recogniseStickersByThreshold(frame);
         imshow("QR Scanner", frame);
         if(waitKey(1) >= 0) break;
     }
