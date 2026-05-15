@@ -37,8 +37,7 @@ void calculate_centre(){
     centre.y = (pered.y+zad.y)/2;
 }
 
-void calculate(){
-    calculate_centre();
+void calculate_angle(){
     std::vector<int> a = {(pered.x - centre.x), (pered.y - centre.y)};
     std::vector<int> b = {(station.x - centre.x), (station.y - centre.y)};
     double b_lengh = sqrt(b[0]*b[0]+b[1]*b[1]);
@@ -47,11 +46,22 @@ void calculate(){
         return;
     }
     angle = acos((a[0]*b[0]+a[1]*b[1])/(a_lengh*b_lengh))*180/CV_PI;
-    distance = b_lengh;
     double perpendikular = a[0]*b[1]-a[1]*b[0];
     if(perpendikular>0){
         direction = 1;
     } else direction = 0;
+}
+void calculate_distance(){
+    std::vector<int> a = {(pered.x - centre.x), (pered.y - centre.y)};
+    std::vector<int> b = {(station.x - centre.x), (station.y - centre.y)};
+    double b_lengh = sqrt(b[0]*b[0]+b[1]*b[1]);
+    distance = b_lengh;
+}
+
+void calculate(){
+    calculate_centre();
+    calculate_angle();
+    calculate_distance();
     std::cout<<perpendikular << std::endl;
     std::cout << angle << " " << b_lengh << std::endl;
 }
