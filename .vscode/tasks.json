@@ -4,7 +4,7 @@
         {
             "label": "Build and Run",
             "type": "shell",
-            "command": "g++ -std=c++17 -D_WIN32_WINNT=0x0A00 server.cpp -o server -I . -I ./json-develop/single_include -lws2_32 && server.exe",
+            "command": "g++ -std=c++17 -D_WIN32_WINNT=0x0A00 idealnaya_arch.cpp -o main -I . -I ./json-develop/single_include -lws2_32 && main.exe",
             "options": {
                 "cwd": "${workspaceFolder}",
                 "shell": {
