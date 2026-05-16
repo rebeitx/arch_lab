@@ -6,7 +6,6 @@
 #include <thread>
 #include <mutex>
 
-
 using namespace cv;
 
 Point pered;
@@ -17,7 +16,7 @@ Point station;
 
 double angle;
 double distance;
-bool direction;//0-влево, 1-вправо
+bool direction; //0-влево, 1-вправо
 double omega = 10;
 double velocity = 52;
 
@@ -96,18 +95,20 @@ class Connection {
     enum class State : char { WAITING, CALCULATING_ANGLE, ROTATING, CALCULATING_DISTANCE, MOVING} state{State::WAITING};
 public:
     constexpr void process_event(ZNAK_SVERHU const&) {
+        std::cout << "ZNAK_SVERHU" << std::endl;
         switch(state) {
-            default: break;
-            case State::WAITING:
-                calculating_angle();
-                state = State::CALCULATING_ANGLE;
-                process_event(ANGLE_CALCULATED{});
+        default: break;
+        case State::WAITING:
+            calculating_angle();
+            state = State::CALCULATING_ANGLE;
+            process_event(ANGLE_CALCULATED{});
         }
     }
     constexpr void process_event(ANGLE_CALCULATED const&) {
+        std::cout << "ANGLE_CALCULATED" << std::endl;
         switch(state) {
-            default: break;
-            case State::CALCULATING_ANGLE:
+        default: break;
+        case State::CALCULATING_ANGLE:
             if(angle > 5){
                 rotate();
                 system("python client_post.py");
@@ -121,6 +122,7 @@ public:
         }
     }
     constexpr void process_event(ROTATED const&) {
+        std::cout << "ROTATED" << std::endl;
         if (state == State::ROTATING) {
             calculating_angle();
             state = State::CALCULATING_ANGLE;
@@ -128,6 +130,7 @@ public:
         }
     }
     constexpr void process_event(DISTANCE_CALCULATED const&) {
+        std::cout << "DISTANCE_CALCULATED" << std::endl;
         if (state == State::CALCULATING_DISTANCE) {
             if(distance < 10){
                 state = State::WAITING;
@@ -140,6 +143,7 @@ public:
         }
     }
     constexpr void process_event(MOVED const&) {
+        std::cout << "MOVED" << std::endl;
         if (state == State::MOVING) {
             calculating_distance();
             if(distance < 10){
@@ -164,7 +168,6 @@ void decodeQRCode(Mat qrcode, const std::vector<Point2f> &src_points) {
     std::string data;
 
     data = detector.detectAndDecode(qrcode);
-    std::cout << data << std::endl;
     if (!data.empty()) {
         if(data == "1"){
             pered.x = (src_points[0].x+src_points[1].x+src_points[2].x+src_points[3].x)/4;
@@ -202,8 +205,8 @@ std::vector<std::vector<Point2f>> findColor(cv::Mat image, Color color_enum)  {
         color = {57, 84, 100};
         cv::inRange(image_hsv, cv::Scalar(color[0]-10,color[1]-50,color[2]-55), cv::Scalar(color[0]+10,color[1]+50,color[2]+55), tmp_img);
     }
-    cv::dilate(tmp_img, tmp_img,cv::Mat(), cv::Point(-1,-1),5);
-    cv::erode(tmp_img, tmp_img,cv::Mat(), cv::Point(-1,-1),2);
+    cv::dilate(tmp_img, tmp_img,cv::Mat(), cv::Point(-1,-1),7);
+    cv::erode(tmp_img, tmp_img,cv::Mat(), cv::Point(-1,-1),3);
 
     cv::findContours(tmp_img,contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
     for (uint i = 0; i<contours.size(); i++) {
@@ -229,7 +232,6 @@ void correct_perspective(Mat& img, const std::vector<Point2f>& src_points) {
     Mat warped;
     warpPerspective(img, warped, M, size);
     decodeQRCode(warped, src_points);
-    imshow("QR", warped);
 }
 
 std::string read_json(){
@@ -258,9 +260,9 @@ int main() {
     namedWindow("QR Scanner", WINDOW_AUTOSIZE);
     int iterations = 0;
     std::vector<std::vector<Point2f>> stickers;
-    std::thread([]{system("python client_get.py");}).detach();
+
     while(true) {
-        
+
         Mat frame;
         cap >> frame;
         Mat fake_frame = frame.clone();
@@ -284,9 +286,21 @@ int main() {
         }
         draw(fake_frame);
         imshow("QR Scanner", fake_frame);
-        if(waitKey(1) >= 0) break;
+
+        if (waitKey(1) == 'q'){
+            break;
+        }
+        if (waitKey(1) == 'r'){
+            std::cout << "sdfsdf" << std::endl;
+            connection.process_event(ZNAK_SVERHU{});
+        }
+        // if (key == 'q'){
+        //     break;
+        // } else if (key == 'r'){
+        //     connection.process_event(ZNAK_SVERHU{});
+        // }
         // if (result == "not received" || result == "done" || result == ""){  }
-        
+
     }
 
     cap.release();
@@ -300,4 +314,3 @@ int main() {
 // connection.process_event(ROTATED{});
 // connection.process_event(DISTANCE_CALCULATED{});
 // connection.process_event(MOVED{});
-

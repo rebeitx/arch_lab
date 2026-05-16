@@ -1,6 +1,6 @@
 import requests, json, time
 
-url = "http://192.168.1.101:8081/commands"
+url = "http://172.25.73.218:8081/commands"
 
 while True:
     response = requests.get(url)
