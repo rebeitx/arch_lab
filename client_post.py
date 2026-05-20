@@ -2,7 +2,7 @@ import requests
 import json
 import time
 
-url = "http://172.25.73.218:8081/commands"
+url = "http://0.0.0.0:8080/commands"
 with open("message.json", "r") as f:
    data = json.load(f)
 

@@ -7,6 +7,7 @@
 #include <mutex>
 
 using namespace cv;
+using namespace std;
 
 Point pered;
 Point zad;
@@ -15,21 +16,17 @@ Point user;
 Point station;
 
 double angle;
-double distance;
-bool direction; //0-влево, 1-вправо
+double length;
+string direction; //0-влево, 1-вправо
 double omega = 10;
 double velocity = 52;
 
 const double min_angle = 5;
-const double min_dist = 10;
+const double min_length = 10;
 
 enum Color {red, green, blue, purple};
 
 std::mutex mtx;
-
-void mute() {
-    std::lock_guard<std::mutex> lock(mtx);
-}
 
 void calculating_centre(){
     centre.x = (pered.x+zad.x)/2;
@@ -37,8 +34,9 @@ void calculating_centre(){
 }
 
 void calculating_angle(){
-    std::vector<int> a = {(pered.x - centre.x), (pered.y - centre.y)};
-    std::vector<int> b = {(station.x - centre.x), (station.y - centre.y)};
+    lock_guard<std::mutex> lock(mtx);
+    vector<int> a = {(pered.x - centre.x), (pered.y - centre.y)};
+    vector<int> b = {(station.x - centre.x), (station.y - centre.y)};
     double b_lengh = sqrt(b[0]*b[0]+b[1]*b[1]);
     double a_lengh = sqrt(a[0]*a[0]+a[1]*a[1]);
     if(!a_lengh || !b_lengh){
@@ -47,22 +45,15 @@ void calculating_angle(){
     angle = acos((a[0]*b[0]+a[1]*b[1])/(a_lengh*b_lengh))*180/CV_PI;
     double perpendikular = a[0]*b[1]-a[1]*b[0];
     if(perpendikular>0){
-        direction = 1;
-    } else direction = 0;
+        direction = "RIGHT";
+    } else direction = "LEFT";
 }
-void calculating_distance(){
+void calculating_length(){
+    lock_guard<std::mutex> lock(mtx);
     std::vector<int> a = {(pered.x - centre.x), (pered.y - centre.y)};
     std::vector<int> b = {(station.x - centre.x), (station.y - centre.y)};
     double b_lengh = sqrt(b[0]*b[0]+b[1]*b[1]);
-    distance = b_lengh;
-}
-
-void calculating(){
-    calculating_centre();
-    calculating_angle();
-    calculating_distance();
-    std::cout<< direction << std::endl;
-    std::cout << angle << " " << distance << std::endl;
+    length = b_lengh;
 }
 
 void create_json(std::string command, int time){
@@ -75,13 +66,11 @@ void create_json(std::string command, int time){
 
 void rotate(){
     int time = angle/omega*200;
-    if(direction){
-        create_json("right", time);
-    } else create_json("left", time);
+    create_json(direction, time);
 }
 
 void move(){
-    int time = distance/velocity*200;
+    int time = length/velocity*200;
     create_json("forward", time);
 }
 
@@ -109,13 +98,13 @@ public:
         switch(state) {
         default: break;
         case State::CALCULATING_ANGLE:
-            if(angle > 5){
+            if(angle > min_angle){
                 rotate();
-                system("python client_post.py");
+                system("python client_post.py");//мб на плюсах
                 state = State::ROTATING;
                 process_event(ROTATED{});
             }else{
-                calculating_distance();
+                calculating_length();
                 state = State::CALCULATING_DISTANCE;
                 process_event(DISTANCE_CALCULATED{});
             }
@@ -132,7 +121,7 @@ public:
     constexpr void process_event(DISTANCE_CALCULATED const&) {
         std::cout << "DISTANCE_CALCULATED" << std::endl;
         if (state == State::CALCULATING_DISTANCE) {
-            if(distance < 10){
+            if(length < min_length){
                 state = State::WAITING;
             }else{
                 move();
@@ -145,8 +134,8 @@ public:
     constexpr void process_event(MOVED const&) {
         std::cout << "MOVED" << std::endl;
         if (state == State::MOVING) {
-            calculating_distance();
-            if(distance < 10){
+            calculating_length();
+            if(length < min_length){
                 state = State::WAITING;
             }else{
                 calculating_angle();
@@ -163,79 +152,42 @@ void draw(Mat& frame){
     line(frame, centre, station, Scalar(255, 0, 0), 1);
 }
 
-void decodeQRCode(Mat qrcode, const std::vector<Point2f> &src_points) {
+void decodeQRCode(Mat &frame) {
+    lock_guard<std::mutex> lock(mtx);
     QRCodeDetector detector;
-    std::string data;
+    vector<string> data;
+    vector<Point> points;
 
-    data = detector.detectAndDecode(qrcode);
+    detector.detectAndDecodeMulti(frame, data, points);
     if (!data.empty()) {
-        if(data == "1"){
-            pered.x = (src_points[0].x+src_points[1].x+src_points[2].x+src_points[3].x)/4;
-            pered.y = (src_points[0].y+src_points[1].y+src_points[2].y+src_points[3].y)/4;
-        }
-        if(data == "2"){
-            zad.x = (src_points[0].x+src_points[1].x+src_points[2].x+src_points[3].x)/4;
-            zad.y = (src_points[0].y+src_points[1].y+src_points[2].y+src_points[3].y)/4;
-        }
-        if(data == "3"){
-            user.x = (src_points[0].x+src_points[1].x+src_points[2].x+src_points[3].x)/4;
-            user.y = (src_points[0].y+src_points[1].y+src_points[2].y+src_points[3].y)/4;
-        }
-        if(data == "4"){
-            station.x = (src_points[0].x+src_points[1].x+src_points[2].x+src_points[3].x)/4;
-            station.y = (src_points[0].y+src_points[1].y+src_points[2].y+src_points[3].y)/4;
+        for (size_t j = 0; j < data.size(); j++) {
+            if (!data[j].empty()) {
+                if(data[j] == "1"){
+                    pered.x = (points[j*4].x+points[j*4+1].x+points[j*4+2].x+points[j*4+3].x)/4;
+                    pered.y = (points[j*4].y+points[j*4+1].y+points[j*4+2].y+points[j*4+3].y)/4;
+                }
+                if(data[j] == "2"){
+                    zad.x = (points[j*4].x+points[j*4+1].x+points[j*4+2].x+points[j*4+3].x)/4;
+                    zad.y = (points[j*4].y+points[j*4+1].y+points[j*4+2].y+points[j*4+3].y)/4;
+                }
+                if(data[j] == "3"){
+                    user.x = (points[j*4].x+points[j*4+1].x+points[j*4+2].x+points[j*4+3].x)/4;
+                    user.y = (points[j*4].y+points[j*4+1].y+points[j*4+2].y+points[j*4+3].y)/4;
+                }
+                if(data[j] == "4"){
+                    station.x = (points[j*4].x+points[j*4+1].x+points[j*4+2].x+points[j*4+3].x)/4;
+                    station.y = (points[j*4].y+points[j*4+1].y+points[j*4+2].y+points[j*4+3].y)/4;
+                }
+            }
         }
         calculating_centre();
     }
 }
 
-std::vector<std::vector<Point2f>> findColor(cv::Mat image, Color color_enum)  {
-    std::vector<std::vector<Point2f>> output;
-    cv::Mat image_hsv;
-    std::vector< std::vector<cv::Point> > contours;
-    cv::cvtColor(image, image_hsv, cv::COLOR_BGR2HSV );
-    cv::Mat tmp_img1(image.size(),CV_8U), tmp_img2(image.size(),CV_8U), tmp_img(image.size(),CV_8U);
-    Scalar color;
-    if(color_enum == red){
-        color = {175, 133, 150};
-        cv::inRange(image_hsv, cv::Scalar(0,color[1]-50,color[2]-55), cv::Scalar(5, color[1]+50,color[2]+55), tmp_img1);
-        cv::inRange(image_hsv, cv::Scalar(165, color[1]-50,color[2]-55), cv::Scalar(180, color[1]+50,color[2]+55), tmp_img2);
-        bitwise_or(tmp_img1, tmp_img2, tmp_img);
-    } else if(color_enum == green){
-        color = {57, 84, 100};
-        cv::inRange(image_hsv, cv::Scalar(color[0]-10,color[1]-50,color[2]-55), cv::Scalar(color[0]+10,color[1]+50,color[2]+55), tmp_img);
-    }
-    cv::dilate(tmp_img, tmp_img,cv::Mat(), cv::Point(-1,-1),7);
-    cv::erode(tmp_img, tmp_img,cv::Mat(), cv::Point(-1,-1),3);
 
-    cv::findContours(tmp_img,contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
-    for (uint i = 0; i<contours.size(); i++) {
-        if(contours[i].size() < 3) continue;
-        cv::RotatedRect rect = minAreaRect(contours[i]);
-        cv::Point2f pts[4];
-        rect.points(pts);
-        std::vector<cv::Point2f> perenos;
-        for (int j = 0; j < 4; j++){
-            perenos.push_back(pts[j]);
-        }
-        output.push_back(perenos);
-    }
-    return output;
-}
 
-void correct_perspective(Mat& img, const std::vector<Point2f>& src_points) {
-    float w = cv::norm(src_points[0] - src_points[1]);
-    float h = cv::norm(src_points[1] - src_points[2]);
-    Size size(w*10, h*10);
-    std::vector<Point2f> dst_points = {{0, 0}, {w*10, 0}, {w*10, h*10}, {0, h*10}};
-    Mat M = getPerspectiveTransform(src_points, dst_points);
-    Mat warped;
-    warpPerspective(img, warped, M, size);
-    decodeQRCode(warped, src_points);
-}
 
 std::string read_json(){
-    mute();
     std::ifstream in("answer.json");
     std::string line;
     std::getline(in, line);
@@ -252,65 +204,37 @@ std::string read_json(){
     return "";
 }
 
-int main() {
-    Connection connection{};
+void cam(){
     VideoCapture cap(1);
-    if(!cap.isOpened()) return -1;
-
+    if(!cap.isOpened()) return;
     namedWindow("QR Scanner", WINDOW_AUTOSIZE);
-    int iterations = 0;
-    std::vector<std::vector<Point2f>> stickers;
-
     while(true) {
-
         Mat frame;
         cap >> frame;
-        Mat fake_frame = frame.clone();
-        iterations++;
-        std::string result = read_json();
-        if(iterations == 30) {
-            stickers = findColor(frame, green);
-            std::vector<std::vector<Point2f>> red_stickers = findColor(frame, red);
-            stickers.reserve(stickers.size() + red_stickers.size());
-            stickers.insert(stickers.end(), red_stickers.begin(), red_stickers.end());
-            for(int i = 0; i < stickers.size(); i++){
-                correct_perspective(frame, stickers[i]);
-            }
-            iterations = 0;
-        }
-        for(int i = 0; i < stickers.size(); i++){
-            line(fake_frame, stickers[i][0], stickers[i][1], Scalar(255, 0, 0), 1);
-            line(fake_frame, stickers[i][1], stickers[i][2], Scalar(255, 0, 0), 1);
-            line(fake_frame, stickers[i][2], stickers[i][3], Scalar(255, 0, 0), 1);
-            line(fake_frame, stickers[i][3], stickers[i][0], Scalar(255, 0, 0), 1);
-        }
-        draw(fake_frame);
-        imshow("QR Scanner", fake_frame);
+        decodeQRCode(frame);
+        draw(frame);
+        imshow("QR Scanner", frame);
 
         if (waitKey(1) == 'q'){
             break;
         }
-        if (waitKey(1) == 'r'){
-            std::cout << "sdfsdf" << std::endl;
-            connection.process_event(ZNAK_SVERHU{});
-        }
-        // if (key == 'q'){
-        //     break;
-        // } else if (key == 'r'){
-        //     connection.process_event(ZNAK_SVERHU{});
-        // }
-        // if (result == "not received" || result == "done" || result == ""){  }
-
     }
-
     cap.release();
     destroyAllWindows();
-    return 0;
 }
 
-
-
-// connection.process_event(ANGLE_CALCULATED{});
-// connection.process_event(ROTATED{});
-// connection.process_event(DISTANCE_CALCULATED{});
-// connection.process_event(MOVED{});
+int main() {
+    Connection connection{};
+    thread t1(cam);
+    t1.detach();
+    while(true){
+        if (waitKey(1) == 'r'){
+            cout << "sdfsdf" << std::endl;
+            if(pered.x != 0 && pered.y != 0 && zad.x != 0 && zad.y != 0 && station.x != 0 && station.y != 0){
+                cout << "ZNAK_SVERHU" << endl;
+                connection.process_event(ZNAK_SVERHU{});
+            }
+        }
+    }
+    return 0;
+}
